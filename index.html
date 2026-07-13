@@ -3,7 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>DIY Web Photo Booth</title>
+    <title>DIY Web Photo Booth - Custom Background</title>
+    
+    <!-- Memuat Library AI untuk Memotong Background secara Real-time -->
+    <script src="https://jsdelivr.net" crossorigin="anonymous"></script>
+
     <style>
         * {
             box-sizing: border-box;
@@ -17,7 +21,6 @@
             background-color: #000;
             font-family: Arial, sans-serif;
         }
-        /* Kontainer Utama Kamera */
         #booth-container {
             position: relative;
             width: 100%;
@@ -26,22 +29,15 @@
             justify-content: center;
             align-items: center;
         }
-        /* Video Live Kamera */
+        /* Elemen video asli disembunyikan karena kita akan menggambarnya ke canvas live */
         video {
-            position: absolute;
+            display: none;
+        }
+        /* Canvas Utama untuk Menampilkan Gabungan Kamera + Background */
+        #live-canvas {
             width: 100%;
             height: 100%;
             object-fit: cover;
-            z-index: 1;
-        }
-        /* Template Bingkai di Atas Kamera */
-        #template-overlay {
-            position: absolute;
-            width: 100%;
-            height: 100%;
-            object-fit: contain;
-            pointer-events: none; /* Supaya layar tetap bisa ditekuk */
-            z-index: 2;
         }
         /* Tombol Jepret Foto */
         #capture-btn {
@@ -55,44 +51,107 @@
             border: 5px solid rgba(0,0,0,0.3);
             border-radius: 50%;
             cursor: pointer;
-            z-index: 3;
+            z-index: 10;
             box-shadow: 0px 4px 10px rgba(0,0,0,0.5);
         }
         #capture-btn:active {
             background-color: #dddddd;
             transform: translateX(-50%) scale(0.95);
         }
-        /* Canvas Tersembunyi Untuk Memproses Gambar */
-        canvas {
+        /* Jendela Pop-up Preview Hasil Foto */
+        #preview-modal {
             display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.9);
+            z-index: 20;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        #preview-img {
+            max-width: 90%;
+            max-height: 70%;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(255,255,255,0.2);
+            margin-bottom: 20px;
+        }
+        .btn-container {
+            display: flex;
+            gap: 20px;
+            width: 100%;
+            justify-content: center;
+        }
+        .action-btn {
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: bold;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            min-width: 120px;
+        }
+        #retake-btn {
+            background-color: #ff4d4d;
+            color: white;
+        }
+        #download-btn {
+            background-color: #2ecc71;
+            color: white;
         }
     </style>
 </head>
 <body>
 
     <div id="booth-container">
-        <!-- Kamera Belakang Otomatis Aktif -->
         <video id="webcam" autoplay playsinline></video>
-        
-        <!-- File Template PNG Transparan Anda -->
-        <img id="template-overlay" src="template.png" alt="Template Frame">
-        
-        <!-- Tombol Ambil Foto -->
+        <canvas id="live-canvas"></canvas>
         <button id="capture-btn" onclick="takeSnapshot()"></button>
     </div>
 
-    <!-- Canvas Pemroses Hasil Akhir -->
-    <canvas id="output-canvas"></canvas>
+    <!-- Pop-up Pilihan Simpan atau Ulangi -->
+    <div id="preview-modal">
+        <h3 style="color: white; margin-bottom: 15px;">Simpan Foto Ini?</h3>
+        <img id="preview-img" src="" alt="Hasil Foto">
+        <div class="btn-container">
+            <button id="retake-btn" class="action-btn" onclick="closePreview()">Foto Ulang</button>
+            <button id="download-btn" class="action-btn" onclick="triggerDownload()">Simpan</button>
+        </div>
+    </div>
 
     <script>
         const video = document.getElementById('webcam');
-        const canvas = document.getElementById('output-canvas');
-        const templateImg = document.getElementById('template-overlay');
+        const liveCanvas = document.getElementById('live-canvas');
+        const liveCtx = liveCanvas.getContext('2d');
+        
+        const previewModal = document.getElementById('preview-modal');
+        const previewImg = document.getElementById('preview-img');
+        
+        let finalDataURL = '';
 
-        // 1. Mengaktifkan Kamera HP Tamu secara Otomatis
+        // Muat gambar template background Anda
+        const templateImg = new Image();
+        templateImg.src = 'template.png';
+
+        // 1. Inisialisasi AI Segmentasi Kamera
+        const selfieSegmentation = new SelfieSegmentation({
+            locateFile: (file) => `https://jsdelivr.net{file}`
+        });
+
+        selfieSegmentation.setOptions({
+            modelSelection: 1, // Menggunakan model portrait/full body yang lebih akurat
+        });
+
+        selfieSegmentation.onResults(onSegmentationResults);
+
+        // 2. Akses Kamera HP
         navigator.mediaDevices.getUserMedia({ 
             video: { 
-                facingMode: "user", // Ubah ke "environment" jika ingin kamera belakang otomatis
+                facingMode: "user", 
                 width: { ideal: 1080 },
                 height: { ideal: 1920 }
             }, 
@@ -100,56 +159,98 @@
         })
         .then(function(stream) {
             video.srcObject = stream;
+            video.addEventListener('loadedmetadata', () => {
+                // Jalankan loop pemrosesan video frame demi frame
+                async function updateFrame() {
+                    if (!video.paused && !video.ended) {
+                        await selfieSegmentation.send({ image: video });
+                    }
+                    requestAnimationFrame(updateFrame);
+                }
+                requestAnimationFrame(updateFrame);
+            });
         })
         .catch(function(err) {
-            alert("Gagal mengakses kamera. Pastikan izin kamera di browser Anda sudah aktif.");
-            console.log("Error: " + err);
+            alert("Gagal mengakses kamera. Mohon izinkan akses kamera di browser Anda.");
         });
 
-        // 2. Fungsi Menggabungkan Kamera + Template & Otomatis Download
-        function takeSnapshot() {
-            const ctx = canvas.getContext('2d');
-            
-            // Set ukuran canvas final sesuai standar portrait (1080x1920)
-            canvas.width = 1080;
-            canvas.height = 1920;
+        // 3. Logika Menggabungkan: Gambar Orang di Depan, Template di Belakang
+        function onSegmentationResults(results) {
+            // Set ukuran internal canvas agar tajam (1080x1920)
+            if (liveCanvas.width !== 1080) {
+                liveCanvas.width = 1080;
+                liveCanvas.height = 1920;
+            }
 
-            // Gambar 1: Foto dari Kamera
-            // Menggunakan teknik penyesuaian aspek rasio agar gambar kamera tidak gepeng
+            liveCtx.save();
+            liveCtx.clearRect(0, 0, liveCanvas.width, liveCanvas.height);
+
+            // LANGKAH A: Gambar Template PNG sebagai background paling bawah
+            if (templateImg.complete) {
+                liveCtx.drawImage(templateImg, 0, 0, liveCanvas.width, liveCanvas.height);
+            }
+
+            // LANGKAH B: Buat masking/potongan tubuh manusia berdasarkan AI
+            liveCtx.globalCompositeOperation = 'destination-atop';
+            liveCtx.drawImage(results.segmentationMask, 0, 0, liveCanvas.width, liveCanvas.height);
+
+            // LANGKAH C: Masukkan gambar kamera asli ke dalam area tubuh yang sudah dipotong
+            liveCtx.globalCompositeOperation = 'source-in';
+            
+            // Penyesuaian aspek rasio agar kamera full screen tidak gepeng
             let videoWidth = video.videoWidth;
             let videoHeight = video.videoHeight;
             let videoAspect = videoWidth / videoHeight;
-            let canvasAspect = canvas.width / canvas.height;
-            
+            let canvasAspect = liveCanvas.width / liveCanvas.height;
             let drawWidth, drawHeight, drawX, drawY;
-            
+
             if (videoAspect > canvasAspect) {
-                drawHeight = canvas.height;
-                drawWidth = canvas.height * videoAspect;
-                drawX = (canvas.width - drawWidth) / 2;
+                drawHeight = liveCanvas.height;
+                drawWidth = liveCanvas.height * videoAspect;
+                drawX = (liveCanvas.width - drawWidth) / 2;
                 drawY = 0;
             } else {
-                drawWidth = canvas.width;
-                drawHeight = canvas.width / videoAspect;
+                drawWidth = liveCanvas.width;
+                drawHeight = liveCanvas.width / videoAspect;
                 drawX = 0;
-                drawY = (canvas.height - drawHeight) / 2;
+                drawY = (liveCanvas.height - drawHeight) / 2;
             }
+            
+            liveCtx.drawImage(results.image, drawX, drawY, drawWidth, drawHeight);
+            liveCtx.restore();
+        }
 
-            // Gambar live kamera ke canvas
-            ctx.drawImage(video, drawX, drawY, drawWidth, drawHeight);
+        // 4. Fungsi Mengambil Gambar (Tidak Langsung Download)
+        function takeSnapshot() {
+            // Mengambil data gambar saat ini dari live canvas
+            finalDataURL = liveCanvas.toDataURL('image/png');
+            
+            // Tampilkan pop-up preview
+            previewImg.src = finalDataURL;
+            previewModal.style.display = 'flex';
+        }
 
-            // Gambar 2: Tempel Template PNG di atas foto kamera
-            ctx.drawImage(templateImg, 0, 0, canvas.width, canvas.height);
+        // 5. Fungsi Pilihan: Foto Ulang
+        function closePreview() {
+            previewModal.style.display = 'none';
+            previewImg.src = '';
+            finalDataURL = '';
+        }
 
-            // 3. Proses Otomatis Download ke HP Tamu
-            const dataURL = canvas.toDataURL('image/png');
+        // 6. Fungsi Pilihan: Konfirmasi Simpan / Download
+        function triggerDownload() {
+            if (!finalDataURL) return;
+
             const downloadLink = document.createElement('a');
-            downloadLink.href = dataURL;
-            downloadLink.download = 'photobooth_' + Date.now() + '.png'; // Nama file acak berdasarkan waktu
+            downloadLink.href = finalDataURL;
+            downloadLink.download = 'photobooth_' + Date.now() + '.png';
             
             document.body.appendChild(downloadLink);
             downloadLink.click();
             document.body.removeChild(downloadLink);
+
+            // Tutup preview setelah berhasil mengunduh
+            closePreview();
         }
     </script>
 </body>
