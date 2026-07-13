@@ -130,7 +130,7 @@
 
     <div id="booth-container">
         <video id="webcam" autoplay playsinline></video>
-        <img id="template-overlay" src="template.png" alt="Template Frame">
+        <img id="template-overlay" src="template.jpg" alt="Template Frame">
         
         <button id="flip-btn" onclick="toggleCamera()">🔄 Balik Kamera</button>
         <button id="capture-btn" onclick="takeSnapshot()"></button>
@@ -177,7 +177,6 @@
                     let g = data[i+1];
                     let b = data[i+2];
                     
-                    // Batas toleransi warna hitam pekat
                     if (r < 30 && g < 30 && b < 30) {
                         data[i+3] = 0; 
                     }
@@ -186,7 +185,7 @@
                 tempCtx.putImageData(imgData, 0, 0);
                 templateImg.src = tempCanvas.toDataURL('image/png');
             } catch (e) {
-                console.error("Gagal memproses transparansi otomatis secara lokal. Solusi: Gunakan Live Server atau upload ke GitHub Pages.", e);
+                console.error("Gagal memproses transparansi otomatis secara lokal. Jalankan di GitHub Pages/Live Server.", e);
             }
         };
 
@@ -247,25 +246,20 @@
                     drawY = (canvas.height - drawHeight) / 2;
                 }
                 
-                ctx.save();
-                if (useFrontCamera) {
-                    ctx.translate(canvas.width, 0);
-                    ctx.scale(-1, 1);
-                }
-
+                // PERBAIKAN: Efek pembalik (ctx.scale) telah dihapus 
+                // Kamera akan menangkap gambar secara normal/lurus (tidak mirror)
                 ctx.drawImage(video, drawX, drawY, drawWidth, drawHeight);
-                ctx.restore(); 
 
+                // Tempel Template Frame di atas foto kamera
                 ctx.drawImage(templateImg, 0, 0, canvas.width, canvas.height);
 
                 finalImageDataUrl = canvas.toDataURL('image/png');
                 previewImage.src = finalImageDataUrl;
 
                 boothContainer.style.display = 'none';
-                previewContainer.style.with = 'flex';
                 previewContainer.style.display = 'flex';
             } catch (error) {
-                alert("Gagal mengambil gambar karena pembatasan keamanan browser (CORS). Silakan upload ke GitHub Pages atau jalankan menggunakan Local Server / VS Code Live Server.");
+                alert("Gagal mengambil gambar karena CORS. Silakan upload ke GitHub Pages atau jalankan menggunakan Live Server.");
                 console.error(error);
             }
         }
