@@ -3,11 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>DIY Web Photo Booth Pro</title>
-    
-    <!-- Memuat Library AI untuk Memotong Background secara Real-time -->
-    <script src="https://jsdelivr.net" crossorigin="anonymous"></script>
-
+    <title>DIY Web Photo Booth</title>
     <style>
         * {
             box-sizing: border-box;
@@ -18,50 +14,50 @@
             width: 100%;
             height: 100%;
             overflow: hidden;
-            background-color: #000;
-            font-family: Arial, sans-serif;
+            background-color: #111;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: white;
         }
-        #booth-container {
-            position: relative;
+        
+        /* Kontainer Utama */
+        #booth-container, #preview-container {
+            position: absolute;
+            top: 0;
+            left: 0;
             width: 100%;
             height: 100%;
             display: flex;
             justify-content: center;
             align-items: center;
         }
-        video {
+
+        #preview-container {
             display: none;
+            background-color: #000;
+            z-index: 10;
+            flex-direction: column;
         }
-        #live-canvas {
+
+        /* --- SUSUNAN LAYER (Z-INDEX) --- */
+        video {
+            position: absolute;
             width: 100%;
             height: 100%;
-            object-fit: cover;
+            object-fit: cover; 
+            z-index: 1; 
         }
 
-        /* Menu Kontrol Atas (Pilih Kamera & Mode) */
-        .top-controls {
+        #template-overlay {
             position: absolute;
-            top: 20px;
-            left: 0;
             width: 100%;
-            display: flex;
-            justify-content: space-around;
-            z-index: 15;
-            padding: 0 10px;
-        }
-        .control-select {
-            padding: 10px 15px;
-            border-radius: 20px;
-            border: 2px solid white;
-            background: rgba(0,0,0,0.6);
-            color: white;
-            font-size: 14px;
-            font-weight: bold;
-            outline: none;
+            height: 100%;
+            object-fit: cover; 
+            pointer-events: none; 
+            z-index: 2; 
         }
 
-        /* Tombol Utama (Aksi) */
-        #action-btn {
+        /* --- TOMBOL UI --- */
+        #capture-btn {
             position: absolute;
             bottom: 40px;
             left: 50%;
@@ -72,215 +68,231 @@
             border: 5px solid rgba(0,0,0,0.3);
             border-radius: 50%;
             cursor: pointer;
-            z-index: 10;
+            z-index: 5;
             box-shadow: 0px 4px 10px rgba(0,0,0,0.5);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            font-weight: bold;
-            font-size: 12px;
+            transition: transform 0.1s;
         }
-        #action-btn.recording {
-            background-color: #ff4d4d !important;
-            animation: pulse 1s infinite;
-        }
-        @keyframes pulse {
-            0% { transform: translateX(-50%) scale(1); }
-            50% { transform: translateX(-50%) scale(1.1); }
-            100% { transform: translateX(-50%) scale(1); }
+        #capture-btn:active {
+            transform: translateX(-50%) scale(0.95);
         }
 
-        /* Tampilan Timer Hitung Mundur / Perekaman */
-        #status-overlay {
-            display: none;
+        #flip-btn {
             position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
+            top: 20px;
+            right: 20px;
+            padding: 10px 15px;
+            background-color: rgba(0,0,0,0.6);
             color: white;
-            font-size: 80px;
-            font-weight: bold;
-            text-shadow: 0px 4px 10px rgba(0,0,0,0.8);
-            z-index: 12;
-            pointer-events: none;
+            border: 1px solid rgba(255,255,255,0.4);
+            border-radius: 20px;
+            cursor: pointer;
+            z-index: 5;
+            font-size: 14px;
+            backdrop-filter: blur(5px);
         }
 
-        /* Jendela Pop-up Preview */
-        #preview-modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
+        /* Tampilan Hasil Akhir */
+        #preview-image {
             width: 100%;
             height: 100%;
-            background-color: rgba(0, 0, 0, 0.95);
-            z-index: 20;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
+            object-fit: cover;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 11;
         }
-        #preview-img, #preview-video {
-            display: none;
-            max-width: 90%;
-            max-height: 70%;
-            border-radius: 8px;
-            box-shadow: 0 4px 15px rgba(255,255,255,0.2);
-            margin-bottom: 20px;
-        }
-        .btn-container {
+
+        .action-buttons {
+            position: absolute;
+            bottom: 40px;
+            z-index: 12;
             display: flex;
             gap: 20px;
-            width: 100%;
-            justify-content: center;
         }
-        .action-btn {
-            padding: 12px 24px;
+
+        .btn {
+            padding: 15px 30px;
             font-size: 16px;
             font-weight: bold;
             border: none;
-            border-radius: 25px;
+            border-radius: 30px;
             cursor: pointer;
-            min-width: 120px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
         }
-        #retake-btn { background-color: #ff4d4d; color: white; }
-        #download-btn { background-color: #2ecc71; color: white; }
+
+        .btn-save { background-color: #4CAF50; color: white; }
+        .btn-retake { background-color: #f44336; color: white; }
+
+        canvas { display: none; }
     </style>
 </head>
 <body>
 
     <div id="booth-container">
-        <!-- Kontrol Pilihan Kamera & Mode -->
-        <div class="top-controls">
-            <select id="camera-select" class="control-select" onchange="restartCamera()">
-                <option value="user">Kamera Depan</option>
-                <option value="environment">Kamera Belakang</option>
-            </select>
-            <select id="mode-select" class="control-select" onchange="updateModeUI()">
-                <option value="photo">Mode Foto</option>
-                <option value="video">Mode Video (5s)</option>
-            </select>
-        </div>
-
         <video id="webcam" autoplay playsinline></video>
-        <canvas id="live-canvas"></canvas>
-        <div id="status-overlay">3</div>
-        <button id="action-btn" onclick="startCapture()"></button>
+        <img id="template-overlay" src="template.jpg" alt="Template Frame">
+        
+        <button id="flip-btn" onclick="toggleCamera()">🔄 Balik Kamera</button>
+        <button id="capture-btn" onclick="takeSnapshot()"></button>
     </div>
 
-    <!-- Pop-up Pilihan Simpan atau Ulangi -->
-    <div id="preview-modal">
-        <h3 id="preview-title" style="color: white; margin-bottom: 15px;">Simpan Hasil?</h3>
-        <img id="preview-img" src="" alt="Hasil Foto">
-        <video id="preview-video" controls autoplay loop playsinline></video>
-        
-        <div class="btn-container">
-            <button id="retake-btn" class="action-btn" onclick="closePreview()">Ulangi</button>
-            <button id="download-btn" class="action-btn" onclick="triggerDownload()">Simpan</button>
+    <div id="preview-container">
+        <img id="preview-image" src="" alt="Hasil Foto">
+        <div class="action-buttons">
+            <button class="btn btn-retake" onclick="retakePhoto()">✖ Ulangi</button>
+            <button class="btn btn-save" onclick="savePhoto()">✔ Simpan Foto</button>
         </div>
     </div>
+
+    <canvas id="output-canvas"></canvas>
 
     <script>
         const video = document.getElementById('webcam');
-        const liveCanvas = document.getElementById('live-canvas');
-        const liveCtx = liveCanvas.getContext('2d');
-        const cameraSelect = document.getElementById('camera-select');
-        const modeSelect = document.getElementById('mode-select');
-        const actionBtn = document.getElementById('action-btn');
-        const statusOverlay = document.getElementById('status-overlay');
-        
-        const previewModal = document.getElementById('preview-modal');
-        const previewImg = document.getElementById('preview-img');
-        const previewVideo = document.getElementById('preview-video');
-        
+        const canvas = document.getElementById('output-canvas');
+        const templateImg = document.getElementById('template-overlay');
+        const boothContainer = document.getElementById('booth-container');
+        const previewContainer = document.getElementById('preview-container');
+        const previewImage = document.getElementById('preview-image');
+
         let currentStream = null;
-        let finalBlob = null;
-        let isPhotoResult = true;
-        let mediaRecorder = null;
-        let recordedChunks = [];
+        let useFrontCamera = true; 
+        let finalImageDataUrl = ""; 
 
-        // Ambil file template.png dari satu folder yang sama di GitHub
-        const templateImg = new Image();
-        templateImg.src = 'template.png';
+        // --- PROSES OTOMATIS MENGHILANGKAN BAGIAN HITAM JPG ---
+        templateImg.onload = function() {
+            if (templateImg.src.startsWith('data:')) return; 
 
-        // Inisialisasi AI Segmentasi Google MediaPipe
-        const selfieSegmentation = new SelfieSegmentation({
-            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`
-        });
-        selfieSegmentation.setOptions({ modelSelection: 1 });
-        selfieSegmentation.onResults(onSegmentationResults);
+            try {
+                const tempCanvas = document.createElement('canvas');
+                const tempCtx = tempCanvas.getContext('2d');
+                tempCanvas.width = templateImg.naturalWidth;
+                tempCanvas.height = templateImg.naturalHeight;
+                
+                tempCtx.drawImage(templateImg, 0, 0);
+                const imgData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+                const data = imgData.data;
+                
+                for (let i = 0; i < data.length; i += 4) {
+                    let r = data[i];
+                    let g = data[i+1];
+                    let b = data[i+2];
+                    
+                    // Batas toleransi warna hitam pekat
+                    if (r < 30 && g < 30 && b < 30) {
+                        data[i+3] = 0; 
+                    }
+                }
+                
+                tempCtx.putImageData(imgData, 0, 0);
+                templateImg.src = tempCanvas.toDataURL('image/png');
+            } catch (e) {
+                console.error("Gagal memproses transparansi otomatis secara lokal. Solusi: Gunakan Live Server atau upload ke GitHub Pages.", e);
+            }
+        };
 
-        // 1. Mengaktifkan Kamera Berdasarkan Pilihan User
         function startCamera() {
             if (currentStream) {
                 currentStream.getTracks().forEach(track => track.stop());
             }
 
-            const facing = cameraSelect.value; // "user" atau "environment"
-            
-            navigator.mediaDevices.getUserMedia({ 
-                video: { 
-                    facingMode: facing, 
+            const constraints = {
+                video: {
+                    facingMode: useFrontCamera ? "user" : "environment",
                     width: { ideal: 1080 },
                     height: { ideal: 1920 }
-                }, 
-                audio: modeSelect.value === 'video' // Aktifkan audio jika mode video
-            })
+                },
+                audio: false
+            };
+
+            navigator.mediaDevices.getUserMedia(constraints)
             .then(function(stream) {
                 currentStream = stream;
                 video.srcObject = stream;
             })
             .catch(function(err) {
-                alert("Gagal mengakses kamera. Mohon ganti izin di pengaturan browser.");
+                alert("Gagal mengakses kamera. Pastikan izin kamera aktif dan menggunakan HTTPS.");
+                console.log("Error: " + err);
             });
         }
 
-        // Loop frame AI
-        video.addEventListener('loadedmetadata', () => {
-            async function updateFrame() {
-                if (!video.paused && !video.ended) {
-                    await selfieSegmentation.send({ image: video });
-                }
-                requestAnimationFrame(updateFrame);
-            }
-            requestAnimationFrame(updateFrame);
-        });
+        startCamera();
 
-        function restartCamera() {
+        function toggleCamera() {
+            useFrontCamera = !useFrontCamera;
             startCamera();
         }
 
-        function updateModeUI() {
-            startCamera(); // Refresh mic state
+        function takeSnapshot() {
+            try {
+                const ctx = canvas.getContext('2d');
+                canvas.width = 1080;
+                canvas.height = 1920;
+
+                let videoWidth = video.videoWidth;
+                let videoHeight = video.videoHeight;
+                let videoAspect = videoWidth / videoHeight;
+                let canvasAspect = canvas.width / canvas.height;
+                
+                let drawWidth, drawHeight, drawX, drawY;
+                
+                if (videoAspect > canvasAspect) {
+                    drawHeight = canvas.height;
+                    drawWidth = canvas.height * videoAspect;
+                    drawX = (canvas.width - drawWidth) / 2;
+                    drawY = 0;
+                } else {
+                    drawWidth = canvas.width;
+                    drawHeight = canvas.width / videoAspect;
+                    drawX = 0;
+                    drawY = (canvas.height - drawHeight) / 2;
+                }
+                
+                ctx.save();
+                if (useFrontCamera) {
+                    ctx.translate(canvas.width, 0);
+                    ctx.scale(-1, 1);
+                }
+
+                ctx.drawImage(video, drawX, drawY, drawWidth, drawHeight);
+                ctx.restore(); 
+
+                ctx.drawImage(templateImg, 0, 0, canvas.width, canvas.height);
+
+                finalImageDataUrl = canvas.toDataURL('image/png');
+                previewImage.src = finalImageDataUrl;
+
+                boothContainer.style.display = 'none';
+                previewContainer.style.with = 'flex';
+                previewContainer.style.display = 'flex';
+            } catch (error) {
+                alert("Gagal mengambil gambar karena pembatasan keamanan browser (CORS). Silakan upload ke GitHub Pages atau jalankan menggunakan Local Server / VS Code Live Server.");
+                console.error(error);
+            }
         }
 
-        // 2. Pemrosesan Efek Green-Screen (Orang didepan, Template dibelakang)
-        function onSegmentationResults(results) {
-            if (liveCanvas.width !== 1080) {
-                liveCanvas.width = 1080;
-                liveCanvas.height = 1920;
-            }
-
-            liveCtx.save();
-            liveCtx.clearRect(0, 0, liveCanvas.width, liveCanvas.height);
-
-            // Lapisan 1: Gambar template.png di paling bawah
-            if (templateImg.complete) {
-                liveCtx.drawImage(templateImg, 0, 0, liveCanvas.width, liveCanvas.height);
-            }
-
-            // Lapisan 2 & 3: Masking AI untuk memotong siluet manusia
-            liveCtx.globalCompositeOperation = 'destination-atop';
-            liveCtx.drawImage(results.segmentationMask, 0, 0, liveCanvas.width, liveCanvas.height);
-
-            liveCtx.globalCompositeOperation = 'source-in';
+        function savePhoto() {
+            const downloadLink = document.createElement('a');
+            downloadLink.href = finalImageDataUrl;
+            downloadLink.download = 'wedding_photobooth_' + Date.now() + '.png';
             
-            let videoWidth = video.videoWidth;
-            let videoHeight = video.videoHeight;
-            let videoAspect = videoWidth / videoHeight;
-            let canvasAspect = liveCanvas.width / liveCanvas.height;
-            let drawWidth, drawHeight, drawX, drawY;
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+            document.body.removeChild(downloadLink);
 
-            if (videoAspect > canvasAspect) {
-                drawHeight = liveCanvas.height;
-                drawWidth = liveCanvas.height * videoAspect;
+            setTimeout(() => {
+                if (navigator.userAgent.match(/iPhone|iPad|iPod/i)) {
+                    alert("Untuk iPhone: Jika tidak terunduh otomatis, tekan lama foto hasil lalu pilih 'Simpan Gambar'.");
+                }
+            }, 500);
+
+            retakePhoto();
+        }
+
+        function retakePhoto() {
+            boothContainer.style.display = 'flex';
+            previewContainer.style.display = 'none';
+            finalImageDataUrl = ""; 
+        }
+    </script>
+</body>
+</html>
