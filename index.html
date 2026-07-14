@@ -47,6 +47,11 @@
             z-index: 1; 
         }
 
+        /* Efek cermin untuk tampilan langsung (Live Preview) kamera depan */
+        video.mirror-view {
+            transform: scaleX(-1);
+        }
+
         #template-overlay {
             position: absolute;
             width: 100%;
@@ -183,7 +188,7 @@
                 }
                 
                 tempCtx.putImageData(imgData, 0, 0);
-                templateImg.src = tempCanvas.toToDataURL ? tempCanvas.toDataURL('image/png') : tempCanvas.toDataURL();
+                templateImg.src = tempCanvas.toDataURL ? tempCanvas.toDataURL('image/png') : tempCanvas.toDataURL();
             } catch (e) {
                 console.error("Gagal memproses transparansi otomatis secara lokal.", e);
             }
@@ -194,7 +199,13 @@
                 currentStream.getTracks().forEach(track => track.stop());
             }
 
-            // Dibuat lebih fleksibel agar mendukung rotasi layar otomatis
+            // Atur live preview menjadi cermin jika memakai kamera depan
+            if (useFrontCamera) {
+                video.classList.add('mirror-view');
+            } else {
+                video.classList.remove('mirror-view');
+            }
+
             const constraints = {
                 video: {
                     facingMode: useFrontCamera ? "user" : "environment",
@@ -226,25 +237,21 @@
             try {
                 const ctx = canvas.getContext('2d');
                 
-                // 1. Deteksi Rasio Layar Saat Ini (Horizontal atau Vertikal)
                 const screenWidth = window.innerWidth;
                 const screenHeight = window.innerHeight;
                 const screenAspect = screenWidth / screenHeight;
 
-                // Set resolusi Canvas tinggi secara dinamis berdasarkan orientasi layar
                 if (screenAspect > 1) {
-                    // Posisi Horizontal / Landscape
                     canvas.width = 1920;
                     canvas.height = 1920 / screenAspect;
                 } else {
-                    // Posisi Vertikal / Portrait
                     canvas.height = 1920;
                     canvas.width = 1920 * screenAspect;
                 }
 
                 const canvasAspect = canvas.width / canvas.height;
 
-                // 2. Gambar Kamera ke Canvas dengan Logika "Cover" (Biar tidak gepeng)
+                // Ambil ukuran asli video stream kamera
                 let videoWidth = video.videoWidth;
                 let videoHeight = video.videoHeight;
                 let videoAspect = videoWidth / videoHeight;
@@ -261,9 +268,24 @@
                     vX = 0;
                     vY = (canvas.height - vHeight) / 2;
                 }
+                
+                // --- PROSES MENGGAMBAR FOTO (MIRROR SELFIE) ---
+                ctx.save(); // Simpan settingan canvas dasar (normal)
+                
+                if (useFrontCamera) {
+                    // Balik arah horizontal HANYA pada saat menggambar tangkapan wajah
+                    ctx.translate(canvas.width, 0);
+                    ctx.scale(-1, 1);
+                }
+                
+                // Gambar wajah (sekarang posisinya mengikuti gaya mirror selfie)
                 ctx.drawImage(video, vX, vY, vWidth, vHeight);
+                
+                // KEMBALIKAN CANVAS KE POSISI NORMAL SEBELUM MENEMPEL TEMPLATE
+                // Ini memastikan teks pada bingkai tidak ikut terbalik
+                ctx.restore(); 
 
-                // 3. Gambar Template Frame ke Canvas dengan Logika "Cover" yang sama
+                // --- PROSES MENEMPEL BINGKAI TEMPLATE (NORMAL) ---
                 let templateWidth = templateImg.naturalWidth;
                 let templateHeight = templateImg.naturalHeight;
                 let templateAspect = templateWidth / templateHeight;
@@ -280,9 +302,11 @@
                     tX = 0;
                     tY = (canvas.height - tHeight) / 2;
                 }
+                
+                // Gambar template
                 ctx.drawImage(templateImg, tX, tY, tWidth, tHeight);
 
-                // Tampilkan hasil akhir ke layar preview
+                // Tampilkan ke layar pratinjau hasil
                 finalImageDataUrl = canvas.toDataURL('image/png');
                 previewImage.src = finalImageDataUrl;
 
